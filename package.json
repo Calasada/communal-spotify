@@ -1,0 +1,24 @@
+{
+  "name": "communal-spotify",
+  "version": "1.0.0",
+  "description": "",
+  "main": "server.js",
+  "scripts": {
+    "test": "echo \"Error: no test specified\" && exit 1",
+    "start": "node server.js"
+  },
+  "repository": {
+    "type": "git",
+    "url": "git+https://github.com/Calasada/communal-spotify.git"
+  },
+  "author": "",
+  "license": "ISC",
+  "bugs": {
+    "url": "https://github.com/Calasada/communal-spotify/issues"
+  },
+  "homepage": "https://github.com/Calasada/communal-spotify#readme",
+  "dependencies": {
+    "express": "^4.17.1",
+    "spotify-web-api-node": "^4.0.0"
+  }
+}

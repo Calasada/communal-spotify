@@ -1,0 +1,26 @@
+
+<script type="text/javascript" src="https://cdn.socket.io/socket.io-1.4.5.js"></script>
+<script type="text/javascript">
+    var socket = io.connect('http://localhost:3000');
+    var data = {};
+
+    function myFunction(){
+        socket.emit('play', data);
+    }
+
+    socket.on('user', function(data) {
+        var newDiv = document.createElement("div");
+        var newContent = document.createTextNode(data.body.display_name); 
+        newDiv.appendChild(newContent); 
+
+        var currentDiv = document.getElementById("div2"); 
+        document.body.insertBefore(newDiv, currentDiv); 
+    })
+</script>
+
+<button onclick="myFunction();">Play</button>
+
+<body>
+    <div id="div1">Logged in as:</div>
+    <div id="div2"></div>
+</body>

@@ -1,6 +1,9 @@
 var SpotifyWebApi = require('spotify-web-api-node');
-const express = require('express')
-const app = express()
+const express = require('express');
+const socket = require('socket.io');
+const path = require("path");
+const app = express();
+
 
 var credentials = {
     clientId: '59a34986442440bf8b14bdb6c954f17a',
@@ -18,13 +21,15 @@ var theManWhoSoldTheWorld = {
 
 spotifyApi = new SpotifyWebApi(credentials);
 
-var scopes = ['user-modify-playback-state'],
+var scopes = ['user-modify-playback-state', 'user-read-email', 'user-read-private', 'user-read-birthdate'],
     state;
 
-var authorizeURL = spotifyApi.createAuthorizeURL(scopes, state);
-console.log(authorizeURL);
+var loggedIn = false;
 
 app.get('/callback', function (req, res) {
+    loggedIn = true;
+    res.redirect('/');
+    
     console.log('authenticated!');  
     var code = req.query.code;
 
@@ -38,13 +43,6 @@ app.get('/callback', function (req, res) {
           spotifyApi.setAccessToken(data.body['access_token']);
           spotifyApi.setRefreshToken(data.body['refresh_token']);
 
-          spotifyApi.play(theManWhoSoldTheWorld).then(
-              function(data) { // Output items
-                console.log('Now Playing theManWhoSoldTheWorld');
-            }, function(err) {
-                console.log('Something went wrong!', err);
-            });
-
         },
         function(err) {
           console.log('Something went wrong!', err);
@@ -53,4 +51,32 @@ app.get('/callback', function (req, res) {
     
   })
 
-app.listen(3000);
+app.get('/', function(req, res) {
+    if(loggedIn) {
+        res.sendFile(path.join(__dirname, 'website/loggedin', 'index.html'));
+    } else {
+        res.sendFile(path.join(__dirname, 'website/initial', 'index.html'));
+    }
+});
+
+var server = app.listen(3000);
+
+var io = socket(server);
+io.on('connection', function(socket) {
+    spotifyApi.getMe().then(
+        function(data) {
+            console.log('sending user data...');
+            io.sockets.emit('user', data);
+        }, function(err) {
+            console.log('Something went wrong!', err);
+        });
+    socket.on('play', function(data) {
+        spotifyApi.play(theManWhoSoldTheWorld).then(
+        function(data) { // Output items
+            console.log('Now Playing theManWhoSoldTheWorld');
+        }, function(err) {
+            console.log('Something went wrong!', err);
+        });
+    })
+    
+})

@@ -8,10 +8,18 @@ var credentials = {
     redirectUri: 'http://localhost:3000/callback'
   };
 
+var theManWhoSoldTheWorld = {
+    "context_uri": "spotify:album:4h9rWFWhgCSSrvIEQ0YhYG",
+    "offset": {
+      "position": 7
+    },
+    "position_ms": 0
+  }
+
 spotifyApi = new SpotifyWebApi(credentials);
 
-var scopes = ['user-read-private', 'user-read-email'],
-    state = 'some-state-of-my-choice';
+var scopes = ['user-modify-playback-state'],
+    state;
 
 var authorizeURL = spotifyApi.createAuthorizeURL(scopes, state);
 console.log(authorizeURL);
@@ -30,14 +38,12 @@ app.get('/callback', function (req, res) {
           spotifyApi.setAccessToken(data.body['access_token']);
           spotifyApi.setRefreshToken(data.body['refresh_token']);
 
-          spotifyApi.getArtistAlbums('43ZHCT0cAZBISjO8DG9PnE').then(
-            function(data) {
-              console.log('Artist albums', data.body);
-            },
-            function(err) {
-              console.error(err);
-            }
-          );
+          spotifyApi.play(theManWhoSoldTheWorld).then(
+              function(data) { // Output items
+                console.log('Now Playing theManWhoSoldTheWorld');
+            }, function(err) {
+                console.log('Something went wrong!', err);
+            });
 
         },
         function(err) {

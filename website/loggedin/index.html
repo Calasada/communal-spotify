@@ -1,26 +1,76 @@
 
+<style>
+        p, p.bold {
+            font-family: arial;
+        }
+        table {
+          font-family: arial, sans-serif;
+          border-collapse: collapse;
+        }
+        
+        td, th {
+          border: 1px solid #dddddd;
+          text-align: left;
+        }
+        
+        tr:nth-child(even) {
+          background-color: #d1d1d1;
+        }
+        </style>
+
 <script type="text/javascript" src="https://cdn.socket.io/socket.io-1.4.5.js"></script>
 <script type="text/javascript">
-    var socket = io.connect('http://localhost:3000');
-    var data = {};
+    var socket = io.connect('http://192.168.1.13:3000');
 
-    function myFunction(){
+    function playMusic(data){
         socket.emit('play', data);
     }
 
-    socket.on('user', function(data) {
-        var newDiv = document.createElement("div");
-        var newContent = document.createTextNode(data.body.display_name); 
-        newDiv.appendChild(newContent); 
+    function searchBar() {
+        socket.emit('search', document.getElementById('SearchBar').value);
+    }
 
-        var currentDiv = document.getElementById("div2"); 
-        document.body.insertBefore(newDiv, currentDiv); 
+    socket.on('user', function(data) {
+        document.getElementById("login").innerHTML = 'Logged in as: ' + data.body.display_name;
     })
+
+    socket.on('results', function(data) {
+        console.log(data);
+        var table = document.getElementById('songTable');
+        for(var i = table.rows.length - 1; i > 0; i--) table.deleteRow(i);
+            data.body.tracks.items.forEach(function(object) {
+                var tr = document.createElement('tr');
+                tr.innerHTML = '<td>' + object.name + '</td>' +
+                '<td>' + object.artists[0].name + '</td>' +
+                '<td>' + object.album.name + '</td>' +
+                '<button onclick="playMusic({uri: \'' + object.uri + '\', name: \'' + object.name + '\'});">Play</button>';
+                table.appendChild(tr);
+            });
+        })
+
+    socket.on('playing', function(data) {
+        document.getElementById("nowPlaying").innerHTML = '<b>Now Playing: ' + data.body.item.name + ' by ' + data.body.item.artists[0].name + '</b>';
+    })
+
+        
 </script>
 
-<button onclick="myFunction();">Play</button>
-
+<p id='login'>
+    Logged in as: 
+</p>
+<p id='nowPlaying'>
+    <b>Now Playing: </b>
+</p>
 <body>
-    <div id="div1">Logged in as:</div>
-    <div id="div2"></div>
+    <input type="text" id="SearchBar" value=""><button onclick="searchBar();">Search</button>
 </body>
+<table id="songTable">
+    <col width=500>
+    <col width=300>
+    <col width=300>
+    <tr>
+        <th>Track</th>
+        <th>Artist</th>
+        <th>Album</th>
+    </tr>
+</table>

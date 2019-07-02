@@ -22,12 +22,16 @@
 <script type="text/javascript">
     var socket = io.connect('http://192.168.1.13:3000');
 
-    function playMusic(data){
-        socket.emit('play', data);
+    function requestMusic(data){
+        socket.emit('request', data);
     }
 
     function searchBar() {
         socket.emit('search', document.getElementById('SearchBar').value);
+    }
+
+    function playlist() {
+        socket.emit('playlist');
     }
 
     socket.on('user', function(data) {
@@ -43,7 +47,7 @@
                 tr.innerHTML = '<td>' + object.name + '</td>' +
                 '<td>' + object.artists[0].name + '</td>' +
                 '<td>' + object.album.name + '</td>' +
-                '<button onclick="playMusic({uri: \'' + object.uri + '\', name: \'' + object.name + '\'});">Play</button>';
+                '<button onclick="requestMusic({uri: \'' + object.uri + '\', name: \'' + object.name + '\', artist_name: \'' + object.artists[0].name + '\'});">Request</button>';
                 table.appendChild(tr);
             });
         })
@@ -51,6 +55,10 @@
     socket.on('playing', function(data) {
         document.getElementById("nowPlaying").innerHTML = '<b>Now Playing: ' + data.body.item.name + ' by ' + data.body.item.artists[0].name + '</b>';
     })
+
+    socket.on('playlistdata', function(data) {
+        console.log(data);
+    });
 
         
 </script>

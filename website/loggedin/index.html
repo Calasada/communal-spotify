@@ -7,18 +7,28 @@
         .important {
             font-size: 20px;
         }
-        table {
+        table.song {
           font-family: arial, sans-serif;
           border-collapse: collapse;
         }
         
-        td, th {
+        td.song, th.song {
+          border: 1px solid #dddddd;
+          text-align: left;
+        }
+
+        table.queue {
+          font-family: arial, sans-serif;
+          border-collapse: collapse;
+        }
+        
+        td.queue, th.queue {
           border: 1px solid #dddddd;
           text-align: left;
         }
         
         tr:nth-child(even) {
-          background-color: #d1d1d1;
+          background-color: #dadada;
         }
         </style>
 
@@ -26,8 +36,9 @@
 <script type="text/javascript">
     var socket = io.connect('http://192.168.1.12:3000');
     var session_name;
+    var connections;
 
-    function requestMusic(data){
+    function requestMusic(data) {
         socket.emit('request', { 'body': data, 'client_name': session_name });
     }
 
@@ -41,46 +52,72 @@
         socket.emit('firstTime', session_name);
     }
 
+    function voteSkip(position) {
+        socket.emit('vote', { 'position': position, 'client_name': session_name });
+        var elem = document.getElementById('vote' + position);
+        elem.parentElement.removeChild(elem);
+    }
+
     function setName(name) {
-        document.getElementById('searchBody').innerHTML = "<input type=\"text\" id=\"SearchBar\" value=\"\"><button id=\"SearchButton\" onclick=\"searchBar();\">Search</button> Requesting under: \'" + name + "\'" + 
-                                                            "<table id=\"songTable\">" + 
+        document.getElementById('searchBody').innerHTML =   "<div><b><u>Request:</u></b></div>" +
+                                                            "<input type=\"text\" id=\"SearchBar\" value=\"\"><button id=\"SearchButton\" onclick=\"searchBar();\">Search</button> Requesting under: \'" + name + "\'" + 
+                                                            "<table class=\"song\" id=\"songTable\">" + 
                                                                 "<col width=500>" + 
                                                                 "<col width=300>" + 
                                                                 "<col width=300>" + 
-                                                                "<tr>" + 
-                                                                    "<th>Track</th>" + 
-                                                                    "<th>Artist</th>" + 
-                                                                    "<th>Album</th>" + 
+                                                                "<tr class=\"song\">" + 
+                                                                    "<th class=\"song\">Track</th>" + 
+                                                                    "<th class=\"song\">Artist</th>" + 
+                                                                    "<th class=\"song\">Album</th>" + 
                                                                 "</tr>" + 
                                                             "</table>";
         session_name = name;
     }
 
     socket.on('user', function(data) {
-        document.getElementById("login").innerHTML = 'Logged in as: ' + data.body.display_name;
+        document.getElementById("login").innerHTML = 'Logged into Spotify as: <b>' + data.body.display_name + '</b>';
     })
 
     socket.on('results', function(data) {
         console.log(data);
         var table = document.getElementById('songTable');
         for(var i = table.rows.length - 1; i > 0; i--) table.deleteRow(i);
-            data.body.tracks.items.forEach(function(object) {
-                var tr = document.createElement('tr');
-                tr.innerHTML = '<td>' + object.name + '</td>' +
-                '<td>' + object.artists[0].name + '</td>' +
-                '<td>' + object.album.name + '</td>' +
-                '<button onclick="requestMusic({uri: \'' + object.uri + '\', name: \'' + object.name + '\', artist_name: \'' + object.artists[0].name + '\'});">Request</button>';
-                table.appendChild(tr);
-            });
-        })
+        data.body.tracks.items.forEach(function(object) {
+            var tr = document.createElement('tr');
+            tr.innerHTML = '<td>' + object.name + '</td>' +
+            '<td>' + object.artists[0].name + '</td>' +
+            '<td>' + object.album.name + '</td>' +
+            '<button onclick="requestMusic({uri: \'' + object.uri + '\', name: \'' + object.name + '\', artist_name: \'' + object.artists[0].name + '\', length: \'' + object.duration_ms + '\'});">Request</button>';
+            table.appendChild(tr);
+        });
+    })
 
     socket.on('playing', function(data) {
+        console.log(data);
         if(data.empty) {
-            document.getElementById("nowPlaying").innerHTML = '<b>Now Playing: <span class="important">' + data.body.body.item.name + '</span> by <span class="important">' + data.body.body.item.artists[0].name + '</span></b> (Nothing requested yet)';
+            document.getElementById("nowPlaying").innerHTML = '<b>Now Playing: <span class="important">' + data.playback.body.item.name + '</span> by <span class="important">' + data.playback.body.item.artists[0].name + '</span></b> (Nothing requested yet)';
         } else if(data.client_name == null) {
-            document.getElementById("nowPlaying").innerHTML = '<b>Now Playing: <span class="important">' + data.body.body.item.name + '</span> by <span class="important">' + data.body.body.item.artists[0].name + '</span></b> (Playing suggested songs, request anything to play immediately)';
+            document.getElementById("nowPlaying").innerHTML = '<b>Now Playing: <span class="important">' + data.playback.body.item.name + '</span> by <span class="important">' + data.playback.body.item.artists[0].name + '</span></b> (Playing suggested songs, request anything to play immediately)';
         } else {
-            document.getElementById("nowPlaying").innerHTML = '<b>Now Playing: <span class="important">' + data.body.body.item.name + '</span> by <span class="important">' + data.body.body.item.artists[0].name + '</span></b> (Requested by: \'' + data.client_name + '\')';
+            document.getElementById("nowPlaying").innerHTML = '<b>Now Playing: <span class="important">' + data.playback.body.item.name + '</span> by <span class="important">' + data.playback.body.item.artists[0].name + '</span></b> (Requested by: \'' + data.client_name + '\')';
+        }
+        
+        var table = document.getElementById('queueTable');
+        for(var i = table.rows.length - 1; i > 0; i--) table.deleteRow(i);
+        console.log(data);
+        for(var i = data.position + 1; i < data.playlist.length; i++) {
+            var voted = false;
+            for(var j = 0; j < data.playlist[i].voters.length; j++) {
+                if(data.playlist[i].voters[j] == session_name) voted = true;
+            }
+            var tr = document.createElement('tr');
+            tr.innerHTML = '<td>' + data.playlist[i].track.body.name + '</td>' + 
+            '<td>' + data.playlist[i].track.body.artist_name + '</td>' + 
+            '<td>' + data.playlist[i].track.client_name + '</td>' + 
+            '<td>' + Math.floor((data.playlist[i].track.body.length / 1000) / 60) + ":" + (Math.floor((data.playlist[i].track.body.length / 1000) - (Math.floor((data.playlist[i].track.body.length / 1000) / 60) * 60)) < 10 ? '0' : '') + Math.floor((data.playlist[i].track.body.length / 1000) - (Math.floor((data.playlist[i].track.body.length / 1000) / 60) * 60)) + '</td>' + 
+            '<td> ' + data.playlist[i].votes + '/' + connections.length + '</td>' + 
+            (voted ? '' : '<button id="vote' + i + '" onclick="voteSkip(' + i + ')">Vote</button>');
+            table.appendChild(tr);
         }
         
     })
@@ -94,22 +131,50 @@
         setName(data);
     });
 
+    socket.on('connections', function(data) {
+        connections = data;
+        connectionsStr = '';
+        for(var i = 0; i < connections.length; i++) {
+            connectionsStr += "<b>" + connections[i].name + "</b>";
+            if(i < connections.length - 1) {
+                connectionsStr += ', ';
+            }
+        }
+        document.getElementById('connections').innerHTML = 'Connected Clients (' + connections.length + ' Total): ' + connectionsStr; 
+    });
+
         
 </script>
 
-<p id='login'>
-    Logged in as: 
-</p>
 <p>
     <div id='nowPlaying'>
         <b>Now Playing: </b>
     </div>
     <div id='queue'>
         <b><u>Queue:</u></b> 
+        <table class="queue" id="queueTable"> 
+            <col width=375>
+            <col width=275>
+            <col width=200>
+            <col width=100>
+            <col width=150>
+            <tr class="queue">
+                <th class="queue">Track</th> 
+                <th class="queue">Artist</th>
+                <th class="queue">Requested By</th>
+                <th class="queue">Length</th>
+                <th class="queue">Votes to Skip</th>
+            </tr>
+        </table>
     </div>
 </p>
 <p id="searchBody" style="font-size:14px">
-    <input type="text" id="SearchBar" value=""><button id="SearchButton" onclick="firstTime();">Set Name</button> Set name to request songs
-    <table id="songTable">
+    <input type="text" id="SearchBar" value="" placeholder="Set name to request songs"><button id="SearchButton" onclick="firstTime();">Set Name</button>
+    <table class="song" id="songTable">
     </table>
+</p>
+<p id='connections' style='font-size: 14px'>
+</p>
+<p id='login' style='font-size: 14px'>
+    Logged into Spotify as: 
 </p>

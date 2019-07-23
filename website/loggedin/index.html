@@ -1,7 +1,11 @@
 
 <style>
-        p, p.bold {
+        p, p.bold, div.bold, div {
             font-family: arial;
+            font-size: 16px;
+        }
+        .important {
+            font-size: 20px;
         }
         table {
           font-family: arial, sans-serif;
@@ -20,18 +24,36 @@
 
 <script type="text/javascript" src="https://cdn.socket.io/socket.io-1.4.5.js"></script>
 <script type="text/javascript">
-    var socket = io.connect('http://192.168.1.13:3000');
+    var socket = io.connect('http://192.168.1.12:3000');
+    var session_name;
 
     function requestMusic(data){
-        socket.emit('request', data);
+        socket.emit('request', { 'body': data, 'client_name': session_name });
     }
 
     function searchBar() {
-        socket.emit('search', document.getElementById('SearchBar').value);
+        socket.emit('search', { 'body': document.getElementById('SearchBar').value, 'client_name': session_name });
     }
 
-    function playlist() {
-        socket.emit('playlist');
+    function firstTime() {
+        session_name = document.getElementById('SearchBar').value;
+        setName(session_name);
+        socket.emit('firstTime', session_name);
+    }
+
+    function setName(name) {
+        document.getElementById('searchBody').innerHTML = "<input type=\"text\" id=\"SearchBar\" value=\"\"><button id=\"SearchButton\" onclick=\"searchBar();\">Search</button> Requesting under: \'" + name + "\'" + 
+                                                            "<table id=\"songTable\">" + 
+                                                                "<col width=500>" + 
+                                                                "<col width=300>" + 
+                                                                "<col width=300>" + 
+                                                                "<tr>" + 
+                                                                    "<th>Track</th>" + 
+                                                                    "<th>Artist</th>" + 
+                                                                    "<th>Album</th>" + 
+                                                                "</tr>" + 
+                                                            "</table>";
+        session_name = name;
     }
 
     socket.on('user', function(data) {
@@ -53,11 +75,23 @@
         })
 
     socket.on('playing', function(data) {
-        document.getElementById("nowPlaying").innerHTML = '<b>Now Playing: ' + data.body.item.name + ' by ' + data.body.item.artists[0].name + '</b>';
+        if(data.empty) {
+            document.getElementById("nowPlaying").innerHTML = '<b>Now Playing: <span class="important">' + data.body.body.item.name + '</span> by <span class="important">' + data.body.body.item.artists[0].name + '</span></b> (Nothing requested yet)';
+        } else if(data.client_name == null) {
+            document.getElementById("nowPlaying").innerHTML = '<b>Now Playing: <span class="important">' + data.body.body.item.name + '</span> by <span class="important">' + data.body.body.item.artists[0].name + '</span></b> (Playing suggested songs, request anything to play immediately)';
+        } else {
+            document.getElementById("nowPlaying").innerHTML = '<b>Now Playing: <span class="important">' + data.body.body.item.name + '</span> by <span class="important">' + data.body.body.item.artists[0].name + '</span></b> (Requested by: \'' + data.client_name + '\')';
+        }
+        
     })
 
     socket.on('playlistdata', function(data) {
         console.log(data);
+    });
+
+    socket.on('returning_user', function(data) {
+        console.log(data);
+        setName(data);
     });
 
         
@@ -66,19 +100,16 @@
 <p id='login'>
     Logged in as: 
 </p>
-<p id='nowPlaying'>
-    <b>Now Playing: </b>
+<p>
+    <div id='nowPlaying'>
+        <b>Now Playing: </b>
+    </div>
+    <div id='queue'>
+        <b><u>Queue:</u></b> 
+    </div>
 </p>
-<body>
-    <input type="text" id="SearchBar" value=""><button onclick="searchBar();">Search</button>
-</body>
-<table id="songTable">
-    <col width=500>
-    <col width=300>
-    <col width=300>
-    <tr>
-        <th>Track</th>
-        <th>Artist</th>
-        <th>Album</th>
-    </tr>
-</table>
+<p id="searchBody" style="font-size:14px">
+    <input type="text" id="SearchBar" value=""><button id="SearchButton" onclick="firstTime();">Set Name</button> Set name to request songs
+    <table id="songTable">
+    </table>
+</p>

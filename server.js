@@ -28,12 +28,12 @@ var loggedIn = false;
 var userId;
 var playlistUri;
 var playlistId;
-var playlistSnapshot;
 
 var playlist = [];
 var queue_pos = -1;
 
 var last_song;
+var last_context;
 
 // wait for callback when someone logs in
 app.get('/callback', function (req, res) {
@@ -138,12 +138,17 @@ app.get('/callback', function (req, res) {
             spotifyApi.getMyCurrentPlaybackState().then(
                 function(playback) {
                     if(last_song == null) {
-                        last_song = playback.body.item.name;
-                    } else if(last_song != playback.body.item.name) {
-                        if(playback.body.context != null && playlist.length > 0) {
-                            queue_pos += 1;
+                        last_song = playback.body.item.id;
+                        last_context = playback.body.context;
+                    } else if(last_song != playback.body.item.id) {
+                        if(playlist.length > 0 && queue_pos < playlist.length) {
+                            queue_pos++;
+                        } else if(queue_pos >= playlist.length) {
+                            queue_pos = playlist.length - 1;
                         }
                     }
+
+                    if(queue_pos < 0) firstTime = true;
         
                     if(playlist.length == 0) {
                         io.sockets.emit('playing', { 'playback': playback, 'playlist': playlist, 'position': queue_pos, 'empty': true, 'client_name': null });
@@ -153,12 +158,27 @@ app.get('/callback', function (req, res) {
                         io.sockets.emit('playing', { 'playback': playback, 'playlist': playlist, 'position': queue_pos, 'empty': false, 'client_name': playlist[queue_pos].track.client_name });
                     }
         
-                    last_song = playback.body.item.name;
+                    last_song = playback.body.item.id;
                 }, function(err) {
                     console.log('Something went wrong in getMyCurrentPlaybackState()!', err);
                 });
             
           }, 2000);
+
+      setInterval(
+          function () {
+            spotifyApi.refreshAccessToken().then(
+                function(data) {
+                  console.log('The access token has been refreshed!');
+              
+                  // Save the access token so that it's used in future calls
+                  spotifyApi.setAccessToken(data.body['access_token']);
+                },
+                function(err) {
+                  console.log('Could not refresh access token', err);
+                }
+              );
+          }, 3000000);
     
   })
 
@@ -208,8 +228,7 @@ io.on('connection', function(socket) {
     })
 
     socket.on('firstTime', function(name) {
-        connections.push( { 'ip': socket.handshake.address, 'name': name });
-        console.log(connections);
+        connections.push( { 'ip': socket.handshake.address, 'name': name, 'active': true });
         io.sockets.emit('connections', connections);
     });
 
@@ -218,9 +237,19 @@ io.on('connection', function(socket) {
         console.log('Request for ' + request_data.body.name + ' by ' + request_data.body.artist_name + ' from \'' + request_data.client_name + '\' ...');
         if(firstTime) {
             firstTime = false;
+
+            spotifyApi.getMyCurrentPlaybackState()
+                .then(function(playback) {
+                    if(request_data.body.uri == playback.body.item.uri) {
+                        queue_pos++;
+                    }
+                }, function(err) {
+                    console.log('Something went wrong in getMyCurrentPlaybackState()!', err);
+                })
+
             spotifyApi.addTracksToPlaylist(playlistId, [request_data.body.uri])
                 .then(function(data) {
-                    playlist.push({ 'track': request_data, 'votes': 0});
+                    playlist.push({ 'track': request_data, 'votes': 0, 'voters': []});
                     
                     spotifyApi.play({context_uri: playlistUri}).then(
                         function(data) {
@@ -263,13 +292,32 @@ io.on('connection', function(socket) {
         playlist[vote_data.position].votes++;
         playlist[vote_data.position].voters.push(vote_data.client_name);
 
-        if(playlist[vote_data.position].votes == connections.length) {
+        var active_clients = 0;
+        for(var i = 0; i < connections.length; i++) {
+            if(connections[i].active) {
+                active_clients++;
+            }
+        }
+
+        console.log((Math.ceil(active_clients / 2)));
+        console.log(playlist[vote_data.position].votes);
+        if(playlist[vote_data.position].votes >= (Math.ceil(active_clients / 2)) || playlist[vote_data.position].track.client_name == vote_data.client_name) {
             console.log('Sufficient votes received, removing/skipping ' + playlist[vote_data.position].track.body.name + ' by ' + playlist[vote_data.position].track.body.artist_name + ' ...');
+
+            if(vote_data.position == queue_pos) {
+                spotifyApi.skipToNext()
+                    .then(function(data) {
+                        queue_pos--;
+                    }, function(err) {
+                        console.log('Something went wrong in skipToNext()!', err);
+                    });
+            }
+
             spotifyApi.getPlaylist(playlistId)
                 .then(function(pl) {
                     spotifyApi.removeTracksFromPlaylistByPosition(playlistId, [vote_data.position], pl.body.snapshot_id)
                         .then(function(data) {
-                            playlist.splice(vote_data.position);
+                            playlist.splice(vote_data.position, 1);
                         }, function(err) {
                             console.log('Something went wrong in removeTracksFromPlaylistByPosition()!', err);
                         })
@@ -278,5 +326,27 @@ io.on('connection', function(socket) {
                 })
             
         }
+    })
+
+    socket.on('leave', function(name) {
+        for(var i = 0; i < connections.length; i++) {
+            if(connections[i].name == name) {
+                connections[i].active = false;
+            }
+        }
+        console.log('User \'' + name + '\' has left.');
+        io.sockets.emit('connections', connections);
+        console.log(connections);
+    })
+
+    socket.on('rejoin', function(name) {
+        for(var i = 0; i < connections.length; i++) {
+            if(connections[i].name == name) {
+                connections[i].active = true;
+            }
+        }
+        console.log('User \'' + name + '\' has re-joined.');
+        io.sockets.emit('connections', connections);
+        console.log(connections);
     })
 })

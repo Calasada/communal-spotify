@@ -11,6 +11,10 @@
           font-family: arial, sans-serif;
           border-collapse: collapse;
         }
+
+        div.sub {
+            font-size: 14px;
+        }
         
         td.song, th.song {
           border: 1px solid #dddddd;
@@ -30,6 +34,11 @@
         tr:nth-child(even) {
           background-color: #dadada;
         }
+
+        td.info {
+            background-color: #ffffff;
+            font-size: 12px
+        }
         </style>
 
 <script type="text/javascript" src="https://cdn.socket.io/socket.io-1.4.5.js"></script>
@@ -37,9 +46,44 @@
     var socket = io.connect('http://192.168.1.12:3000');
     var session_name;
     var connections;
+    var active;
+    var playlist = [];
+    var active_clients;
 
-    function requestMusic(data) {
-        socket.emit('request', { 'body': data, 'client_name': session_name });
+    function requestMusic(data, position) {
+        console.log(position);
+
+        if(!active) {
+            var button = document.getElementById('request' + position);
+            button.innerHTML = '<strike>Request</strike>';
+            var tr = document.getElementById('result' + position);
+            var td = document.createElement('td');
+            td.innerHTML = 'Re-join to request songs.';
+            td.className = 'info';
+            tr.appendChild(td);
+
+        } else if(playlist.length != 0 && data.uri == playlist[playlist.length-1].track.body.uri) {
+            var button = document.getElementById('request' + position);
+            button.innerHTML = '<strike>Request</strike>';
+            var tr = document.getElementById('result' + position);
+            var td = document.createElement('td');
+            td.innerHTML = 'Can\'t request duplicates.';
+            td.className = 'info';
+            tr.appendChild(td);
+
+        // } else if(session_name == playlist[playlist.length-1].track.client_name) {
+        //     var button = document.getElementById('request' + position);
+        //     button.innerHTML = '<strike>Request</strike>';
+        //     var tr = document.getElementById('result' + position);
+        //     var td = document.createElement('td');
+        //     td.innerHTML = 'You requested last.';
+        //     td.className = 'info';
+        //     tr.appendChild(td);
+
+        } else {
+            playlist.push({ track: { 'body': data, 'client_name': session_name }, votes: 0, voters: [] });
+            socket.emit('request', { 'body': data, 'client_name': session_name });
+        }
     }
 
     function searchBar() {
@@ -56,6 +100,14 @@
         socket.emit('vote', { 'position': position, 'client_name': session_name });
         var elem = document.getElementById('vote' + position);
         elem.parentElement.removeChild(elem);
+    }
+
+    function leave(name) {
+        socket.emit('leave', name);
+    }
+
+    function rejoin(name) {
+        socket.emit('rejoin', name);
     }
 
     function setName(name) {
@@ -82,26 +134,40 @@
         console.log(data);
         var table = document.getElementById('songTable');
         for(var i = table.rows.length - 1; i > 0; i--) table.deleteRow(i);
-        data.body.tracks.items.forEach(function(object) {
+        for(var i = 0; i < data.body.tracks.items.length; i++) {
             var tr = document.createElement('tr');
-            tr.innerHTML = '<td>' + object.name + '</td>' +
-            '<td>' + object.artists[0].name + '</td>' +
-            '<td>' + object.album.name + '</td>' +
-            '<button onclick="requestMusic({uri: \'' + object.uri + '\', name: \'' + object.name + '\', artist_name: \'' + object.artists[0].name + '\', length: \'' + object.duration_ms + '\'});">Request</button>';
+            var song_name = data.body.tracks.items[i].name;
+            song_name = song_name.replace(/'/g, "\\'");
+            tr.innerHTML = '<td>' + data.body.tracks.items[i].name + '</td>' +
+            '<td>' + data.body.tracks.items[i].artists[0].name + '</td>' +
+            '<td>' + data.body.tracks.items[i].album.name + '</td>' +
+            '<button id=\'request' + i + '\' onclick="requestMusic({uri: \'' + data.body.tracks.items[i].uri + '\', name: \'' + song_name + '\', artist_name: \'' + data.body.tracks.items[i].artists[0].name + '\', length: \'' + data.body.tracks.items[i].duration_ms + '\'}, ' + i + ');">' + 
+                'Request</button>';
+            tr.id = 'result' + i;
             table.appendChild(tr);
-        });
+        }
     })
 
     socket.on('playing', function(data) {
         console.log(data);
+
+        playlist = data.playlist;
+        
         if(data.empty) {
             document.getElementById("nowPlaying").innerHTML = '<b>Now Playing: <span class="important">' + data.playback.body.item.name + '</span> by <span class="important">' + data.playback.body.item.artists[0].name + '</span></b> (Nothing requested yet)';
+            document.getElementById('poll').innerHTML = '';
         } else if(data.client_name == null) {
             document.getElementById("nowPlaying").innerHTML = '<b>Now Playing: <span class="important">' + data.playback.body.item.name + '</span> by <span class="important">' + data.playback.body.item.artists[0].name + '</span></b> (Playing suggested songs, request anything to play immediately)';
+            document.getElementById('poll').innerHTML = '';
         } else {
+            var voted = false;
+            for(var j = 0; j < data.playlist[data.position].voters.length; j++) {
+                if(data.playlist[data.position].voters[j] == session_name) voted = true;
+            }
             document.getElementById("nowPlaying").innerHTML = '<b>Now Playing: <span class="important">' + data.playback.body.item.name + '</span> by <span class="important">' + data.playback.body.item.artists[0].name + '</span></b> (Requested by: \'' + data.client_name + '\')';
+            document.getElementById('poll').innerHTML = data.playlist[data.position].votes + ' out of ' + active_clients + ' people want to skip this song. ' + Math.ceil(active_clients / 2) + ' vote' + (active_clients / 2 == 1 ? '' : 's') + ' required. ' + (voted || session_name == null ? '' : '<button id="vote' + data.position + '" onclick="voteSkip(' + data.position + ')">Vote</button>');
         }
-        
+
         var table = document.getElementById('queueTable');
         for(var i = table.rows.length - 1; i > 0; i--) table.deleteRow(i);
         console.log(data);
@@ -110,13 +176,15 @@
             for(var j = 0; j < data.playlist[i].voters.length; j++) {
                 if(data.playlist[i].voters[j] == session_name) voted = true;
             }
+            var self = data.playlist[i].track.client_name == session_name;
+            console.log(self);
             var tr = document.createElement('tr');
             tr.innerHTML = '<td>' + data.playlist[i].track.body.name + '</td>' + 
             '<td>' + data.playlist[i].track.body.artist_name + '</td>' + 
             '<td>' + data.playlist[i].track.client_name + '</td>' + 
             '<td>' + Math.floor((data.playlist[i].track.body.length / 1000) / 60) + ":" + (Math.floor((data.playlist[i].track.body.length / 1000) - (Math.floor((data.playlist[i].track.body.length / 1000) / 60) * 60)) < 10 ? '0' : '') + Math.floor((data.playlist[i].track.body.length / 1000) - (Math.floor((data.playlist[i].track.body.length / 1000) / 60) * 60)) + '</td>' + 
-            '<td> ' + data.playlist[i].votes + '/' + connections.length + '</td>' + 
-            (voted ? '' : '<button id="vote' + i + '" onclick="voteSkip(' + i + ')">Vote</button>');
+            '<td> ' + data.playlist[i].votes + '/' + Math.ceil(active_clients/2) + '</td>' + 
+            (voted || session_name == null ? '' : '<button id="vote' + i + '" onclick="voteSkip(' + i + ')">' + (self ? 'Skip' : 'Vote') + '</button>');
             table.appendChild(tr);
         }
         
@@ -134,13 +202,37 @@
     socket.on('connections', function(data) {
         connections = data;
         connectionsStr = '';
+        var connected = false;
+        active_clients = 0;
+        active = false;
         for(var i = 0; i < connections.length; i++) {
-            connectionsStr += "<b>" + connections[i].name + "</b>";
-            if(i < connections.length - 1) {
-                connectionsStr += ', ';
+            if(connections[i].active) {
+                active_clients++;
+                connectionsStr += "<b>" + connections[i].name + "</b>";
+                if(i < connections.length - 1) {
+                    connectionsStr += ', ';
+                }
             }
+            if(connections[i].name == session_name) {
+                connected = true;
+                if(connections[i].active) {
+                    active = true;
+                }
+            }
+            
         }
-        document.getElementById('connections').innerHTML = 'Connected Clients (' + connections.length + ' Total): ' + connectionsStr; 
+        document.getElementById('connections').innerHTML = 'Connected Clients (' + active_clients + ' Total): ' + connectionsStr;
+        if(connected && active) {
+            var leave_button = document.createElement('div');
+            leave_button.innerHTML = '<button onclick="leave(\'' + session_name + '\')">Leave</button>';
+            document.getElementById('connections').appendChild(leave_button);
+            console.log('left');
+        } else if(connected && !active) {
+            var join_button = document.createElement('div');
+            join_button.innerHTML = '<button onclick="rejoin(\'' + session_name + '\')">Re-join</button>';
+            document.getElementById('connections').appendChild(join_button);
+            console.log('rejoined');
+        }
     });
 
         
@@ -149,6 +241,8 @@
 <p>
     <div id='nowPlaying'>
         <b>Now Playing: </b>
+    </div>
+    <div class='sub' id='poll'>
     </div>
     <div id='queue'>
         <b><u>Queue:</u></b> 
@@ -169,7 +263,7 @@
     </div>
 </p>
 <p id="searchBody" style="font-size:14px">
-    <input type="text" id="SearchBar" value="" placeholder="Set name to request songs"><button id="SearchButton" onclick="firstTime();">Set Name</button>
+    <input type="text" id="SearchBar" value="" placeholder="Set name to request songs"><button id="SearchButton" onclick="firstTime();">Set Name</button> Set name to request songs and vote to skip songs.
     <table class="song" id="songTable">
     </table>
 </p>
